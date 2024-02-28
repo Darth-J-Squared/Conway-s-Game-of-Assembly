@@ -1,0 +1,3 @@
+﻿  Assembling AddSub2.asm...
+AddSub2.obj : error LNK2019: unresolved external symbol _DumpRegs@0 referenced in function _main@0
+D:\AsmBook 8\examples\Project32_VS2019\Release\Project.exe : fatal error LNK1120: 1 unresolved externals

@@ -1,0 +1,3 @@
+﻿  Assembling NotAddSub2.asm...
+NotAddSub2.obj : warning LNK4258: directive '/ENTRY:main@0' not compatible with switch '/ENTRY:main'; ignored
+  Project.vcxproj -> C:\Users\Darth\OneDrive\Desktop\Final\Debug\Project.exe

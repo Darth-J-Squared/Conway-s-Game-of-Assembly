@@ -1,0 +1,8 @@
+C:\Users\Darth\OneDrive\Desktop\Project32_VS2019\Debug\Project.exe
+C:\Users\Darth\OneDrive\Desktop\Project32_VS2019\Debug\Project.pdb
+C:\Users\Darth\OneDrive\Desktop\MP3\Debug\Project.exe
+C:\Users\Darth\OneDrive\Desktop\MP3\Debug\Project.pdb
+C:\Users\Darth\OneDrive\Desktop\MP5\Debug\Project.exe
+C:\Users\Darth\OneDrive\Desktop\MP5\Debug\Project.pdb
+C:\Users\Darth\OneDrive\Desktop\Final\Debug\Project.exe
+C:\Users\Darth\OneDrive\Desktop\Final\Debug\Project.pdb

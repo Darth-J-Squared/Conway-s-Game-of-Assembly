@@ -1,0 +1,1828 @@
+Microsoft (R) Macro Assembler Version 14.27.29112.0	    05/22/21 13:50:37
+Final Project	(main.asm				     Page 1 - 1
+
+
+				TITLE Final Project	(main.asm)
+				; Description:    Final Project - John Conway's Game of Life. Our zero-player game outputs to the terminal a grid 
+				;						    (size, color, and starting pattern based on user input), and prints the generations of the cells
+				;						    based on the rules of the game (see requirements specification).
+				; Authors: Jonathan Hamstra, Emma Foulk, Shane Modena
+				; Sources: John Conway, Game of Life
+				;		 Kip R. Irvine - Assembly Language for x86 Processors Textbook
+				; Date: 5/18/21
+
+				INCLUDE Irvine32.inc
+			      C ; Include file for Irvine32.lib             (Irvine32.inc)
+			      C 
+			      C ;OPTION CASEMAP:NONE		; optional: make identifiers case-sensitive
+			      C 
+			      C INCLUDE SmallWin.inc		; MS-Windows prototypes, structures, and constants
+			      C .NOLIST
+			      C .LIST
+			      C 
+			      C INCLUDE VirtualKeys.inc
+			      C ; VirtualKeys.inc
+			      C .NOLIST
+			      C .LIST
+			      C 
+			      C 
+			      C .NOLIST
+			      C .LIST
+			      C 
+
+				GetProcessHeap PROTO
+
+ 00000000			.data
+
+ 00000000 0000000A		dim DWORD 10					;dimension of the grid (default: 10x10)
+ 00000004 00			line BYTE 0					;tracks which line we are printing for x/y cursor locatoin
+ 00000005 0000000E		liveSquareColor DWORD 14			;variable to set color based on user input (default = yellow)
+
+				;PROMPTS PRINTED TO SCREEN FOR USER INPUT
+
+ 00000009 57 65 6C 63 6F	prompt BYTE "Welcome to John Conway's GAME OF LIFE!!!     " ,0
+	   6D 65 20 74 6F
+	   20 4A 6F 68 6E
+	   20 43 6F 6E 77
+	   61 79 27 73 20
+	   47 41 4D 45 20
+	   4F 46 20 4C 49
+	   46 45 21 21 21
+	   20 20 20 20 20
+	   00
+ 00000037 45 6E 74 65 72	prompt2 BYTE "Enter the dimension of your grid ('10' will create a 10x10 grid): " ,0
+	   20 74 68 65 20
+	   64 69 6D 65 6E
+	   73 69 6F 6E 20
+	   6F 66 20 79 6F
+	   75 72 20 67 72
+	   69 64 20 28 27
+	   31 30 27 20 77
+	   69 6C 6C 20 63
+	   72 65 61 74 65
+	   20 61 20 31 30
+	   78 31 30 20 67
+	   72 69 64 29 3A
+	   20 00
+ 0000007A 45 6E 74 65 72	prompt3 BYTE "Enter an integer to change the color of the cells (some of our favorites are 1-15 or 210-223): " ,0
+	   20 61 6E 20 69
+	   6E 74 65 67 65
+	   72 20 74 6F 20
+	   63 68 61 6E 67
+	   65 20 74 68 65
+	   20 63 6F 6C 6F
+	   72 20 6F 66 20
+	   74 68 65 20 63
+	   65 6C 6C 73 20
+	   28 73 6F 6D 65
+	   20 6F 66 20 6F
+	   75 72 20 66 61
+	   76 6F 72 69 74
+	   65 73 20 61 72
+	   65 20 31 2D 31
+	   35 20 6F 72 20
+	   32 31 30 2D 32
+	   32 33 29 3A 20
+	   00
+ 000000DA 45 6E 74 65 72	prompt4 BYTE "Enter an integer to choose a pattern (1 - Glider, 2 - Flasher, 3 - Bomb): " ,0
+	   20 61 6E 20 69
+	   6E 74 65 67 65
+	   72 20 74 6F 20
+	   63 68 6F 6F 73
+	   65 20 61 20 70
+	   61 74 74 65 72
+	   6E 20 28 31 20
+	   2D 20 47 6C 69
+	   64 65 72 2C 20
+	   32 20 2D 20 46
+	   6C 61 73 68 65
+	   72 2C 20 33 20
+	   2D 20 42 6F 6D
+	   62 29 3A 20 00
+
+ 00000125 00000000		hHeap HANDLE ?					;used to allocate memory from the heap
+
+ 00000129 00000320		ARRAY_SIZE DWORD 800			; number of bytes in two arrays (default: two 10x10 DWORD grids is 800 bytes)
+ 0000012D 00000064		BoredSize DWORD 100				; number of DWORDS in one board (10x10 default grid)
+ 00000131 00000190		bored_size_bytes DWORD 400		; number of BYTES in one board (10x10 default grid)
+
+ 00000135 00000000		neighbors DWORD ?				;used to track the number of live cells neighboring the cell in question
+
+
+
+				;Variables that identify surrounding squares, default is 10x10 grid
+
+ 00000139 0000002C		uLeft DWORD 44					;"upper" surrounding squares
+ 0000013D 00000028		uMiddle DWORD 40
+ 00000141 00000024		uRight DWORD 36
+
+ 00000145 00000004		cLeft DWORD 4					;left and right squares, cMiddle is the square in question
+ 00000149 00000000		cMiddle DWORD 0
+ 0000014D 00000004		cRight DWORD 4
+
+ 00000151 00000024		bLeft DWORD 36					;"bottom" surrounding squares
+ 00000155 00000028		bMiddle DWORD 40
+ 00000159 0000002C		bRight DWORD 44
+
+
+
+ 0000015D 00000000		LeftCornerNumber DWORD ?			;used in checkSquare, finds the index value for the bottom left corner (ex: in 10x10 grid, LeftCornerNumber = 91)
+
+ 00000161 00000000		pbored DWORD ?		;yes, it's bored			present array
+ 00000165 00000000		fbored DWORD ?		;yes, it's also bored		future array
+
+
+
+
+
+ 00000000			.code
+ 00000000			main proc
+
+ 00000000  E8 0000007E		call userInput						;gets user input of grid size and color
+
+ 00000005  E8 00000025		call make_heap						;dynamically allocate memory for two arrays
+ 0000000A  E8 00000038		call allocate_array_present
+
+ 0000000F  E8 00000840		call patterns						;user input for which pattern (glider, flasher, bomb)
+ 00000014  E8 0000010F		call displayBoard					;displays initial pattern
+
+ 00000019  E8 00000683		call game_loop						;loops through 25 generations of the pattern and displays each to the terminal
+
+
+
+ 0000001E  B8 0000000F		mov eax, 15						;resets color so end notifications look normal
+ 00000023  E8 00000000 E	call SetTextColor
+
+
+
+					exit
+ 00000028  6A 00	   *	    push   +000000000h
+ 0000002A  E8 00000000 E   *	    call   ExitProcess
+ 0000002F			main ENDP
+
+
+
+				;__________________________________________________________________________________________
+				; make_heap
+				;	Finds address for program's existing heap area, will be used in allocate_array_present.
+				; 
+				; Returns: EAX, placed into hHeap, holding heap memory address
+				;__________________________________________________________________________________________
+
+ 0000002F			make_heap PROC
+					INVOKE GetProcessHeap						;returns 32-bit integer handle to program's existing heap area in EAX (if failure, EAX = NULL)
+ 0000002F  E8 00000000 E   *	    call   GetProcessHeap
+					.IF eax == NULL
+ 00000034  0B C0	   *	    or	eax, eax
+ 00000036  75 09	   *	    jne    @C0001
+ 00000038  E8 00000000 E			call WriteWindowsMsg					;error while creating heap, display error message
+ 0000003D  EB 07				jmp quit
+					.ELSE
+ 0000003F  EB 05	   *	    jmp    @C0003
+ 00000041		   *@C0001:
+ 00000041  A3 00000125 R			mov hHeap, eax							;move heap handle into hHeap
+					.ENDIF
+ 00000046		   *@C0003:
+ 00000046				quit:
+ 00000046  C3			ret
+ 00000047			make_heap ENDP
+
+
+				;__________________________________________________________________________________________
+				; allocate_array_present
+				;	Allocates two grid's worth of memory from the heap and fills them with zeros. Stores
+				;	address to beginning of memory in pbored, middle of memory in fbored.
+				; 
+				; Receives: hHeap (program's existing heap area)
+				; Returns: pbored - holds address to beginning of allocated memory
+				;		 fbored - holds address to middle of allocated memory, acts as second "array"
+				;__________________________________________________________________________________________
+
+ 00000047			allocate_array_present PROC USES eax ecx ebx
+ 00000047  50		   *	    push   eax
+ 00000048  51		   *	    push   ecx
+ 00000049  53		   *	    push   ebx
+					INVOKE HeapAlloc, hHeap, HEAP_ZERO_MEMORY, ARRAY_SIZE		;allocates a block of memory from a heap, size based on user input, return value in EAX is address of memory block, fills all of memory with 0s
+ 0000004A  FF 35 00000129 R *	    push   ARRAY_SIZE
+ 00000050  6A 08	   *	    push   +000000008h
+ 00000052  FF 35 00000125 R *	    push   hHeap
+ 00000058  E8 00000000 E   *	    call   HeapAlloc
+					.IF eax == NULL				;if memory wasn't allocated
+ 0000005D  0B C0	   *	    or	eax, eax
+ 0000005F  75 07	   *	    jne    @C0004
+ 00000061  E8 00000000 E			call WriteWindowsMsg		
+					.ELSE
+ 00000066  EB 05	   *	    jmp    @C0006
+ 00000068		   *@C0004:
+ 00000068  A3 00000161 R			mov pbored, eax			;pbored holds memory location for dynamically allocated "arrays"
+					.ENDIF
+ 0000006D		   *@C0006:
+
+					;mov eax, ARRAY_SIZE			;filling board with 0s, unnecessary because of "HEAP_ZERO_MEMORY"	
+					;mov ecx, 4					;could fill board with other values, good for debugging
+					;div ecx
+					;mov ARRAY_SIZE, eax
+
+					;mov esi, pbored			
+					;mov ecx, ARRAY_SIZE			
+					;mov ebx, 0
+					;L3:
+					;	mov [esi], ebx
+					;	add esi, 4
+					;loop L3
+
+
+ 0000006D  8B 35 00000161 R		mov esi, pbored				;sets esi to beginning of memory
+ 00000073  03 35 00000131 R		add esi, bored_size_bytes		;finds memory location half way into dynamically allocated memory (where the necxt "array" should start)
+ 00000079  89 35 00000165 R		mov fbored, esi				;sets fbored to the middle location
+
+
+				ret
+ 0000007F  5B		   *	    pop    ebx
+ 00000080  59		   *	    pop    ecx
+ 00000081  58		   *	    pop    eax
+ 00000082  C3		   *	    ret    00000h
+ 00000083			allocate_array_present ENDP
+
+
+
+
+
+				;__________________________________________________________________________________________
+				; userInput
+				;	Prompts user to input grid size and the color of live squares.
+				; 
+				; Receives: user input using ReadDec
+				; Returns: dim - fills with user inputed dimension of grid (ex: "10" is a 10x10 grid)
+				;		 BoredSize - fills with number of "entries" in grid based on user input.
+				;		 bored_size_bytes - fills with number of bytes in a single "array"
+				;		 LiveSquareColor - user inputed color (integer)
+				;__________________________________________________________________________________________
+
+ 00000083			userInput PROC
+ 00000083  BA 00000009 R		mov edx, OFFSET prompt
+ 00000088  E8 00000000 E		call WriteString			;this introduces the user to the game
+
+ 0000008D  BA 00000037 R		mov edx, OFFSET prompt2
+ 00000092  E8 00000000 E		call WriteString			;this asks the user for input
+
+ 00000097  E8 00000000 E		call ReadDec				;grabs user input
+ 0000009C  A3 00000000 R		mov dim, eax
+
+ 000000A1  F7 25 00000000 R		mul dim					;setting array size based on user input
+ 000000A7  BB 00000008			mov ebx, 8				;multiply by 4 (to get number of bytes), multiply by 2 (two arrays in dynamic allocation), 2*4=8
+ 000000AC  F7 E3			mul ebx
+ 000000AE  A3 00000129 R		mov array_size, eax			;this gives us the total number of bytes in the entire allocated heap
+
+ 000000B3  A1 00000000 R		mov eax, dim
+ 000000B8  F7 25 00000000 R		mul dim
+ 000000BE  A3 0000012D R		mov BoredSize, eax			;this gives us the size of a standard board in literal squares, used for loop counters
+ 000000C3  BA 00000004			mov edx, 4
+ 000000C8  F7 E2			mul edx
+ 000000CA  A3 00000131 R		mov bored_size_bytes, eax	;this is the number of a single board in bytes, used later for different loop counters
+
+
+					;setting surrounding grid variables
+
+ 000000CF  BA 00000004			mov edx, 4
+					
+ 000000D4  A1 00000000 R		mov eax, dim
+ 000000D9  40				inc eax
+ 000000DA  F7 E2			mul edx
+ 000000DC  A3 00000139 R		mov uLeft, eax
+ 000000E1  A3 00000159 R		mov bRight, eax
+
+ 000000E6  BA 00000004			mov edx, 4
+
+ 000000EB  A1 00000000 R		mov eax, dim
+ 000000F0  48				dec eax
+ 000000F1  F7 E2			mul edx
+ 000000F3  A3 00000141 R		mov uRight, eax
+ 000000F8  A3 00000151 R		mov bLeft, eax
+
+ 000000FD  BA 00000004			mov edx, 4
+
+ 00000102  A1 00000000 R		mov eax, dim
+ 00000107  F7 E2			mul edx
+ 00000109  A3 0000013D R		mov uMiddle, eax
+ 0000010E  A3 00000155 R		mov bMiddle, eax
+
+ 00000113  BA 0000007A R		mov edx, OFFSET prompt3
+ 00000118  E8 00000000 E		call WriteString				;asks user for what color they want the alive squares to be
+
+ 0000011D  E8 00000000 E		call ReadDec
+ 00000122  A3 00000005 R		mov liveSquareColor, eax			;222 looks cool
+
+
+ 00000127  C3			ret
+ 00000128			userInput ENDP
+
+
+
+
+
+				;__________________________________________________________________________________________
+				; displayBoard
+				;	Loops through the size of the board (in rows/columns) and prints each line (calls on printLine).
+				; 
+				; Receives: pbored - location of array to be printed
+				; Returns: (prints to terminal)
+				;__________________________________________________________________________________________
+
+
+ 00000128			displayBoard PROC uses ecx
+
+ 00000128  51		   *	    push   ecx
+ 00000129  C6 05 00000004 R		mov line, 0
+	   00
+
+ 00000130  8B 35 00000161 R		mov esi, pbored				;change this line from fbored/pbored to switch which is outputting
+ 00000136  8B 0D 00000000 R		mov ecx, dim					;loops through based on the dimension of the grid - dim equals number of rows/columns
+ 0000013C			L1:
+ 0000013C  66| BA 0000			mov dx, 0						;goes to the leftmost square, at the vertical line indicated by the "line" variable
+ 00000140  8A 35 00000004 R		mov dh, line
+ 00000146  E8 00000000 E		call Gotoxy
+ 0000014B  E8 0000000B			call printLine					;once set up, sends it to printline to actually finish the line
+ 00000150  80 05 00000004 R		add line, 1
+	   01
+ 00000157  E2 E3		loop L1
+
+				ret
+ 00000159  59		   *	    pop    ecx
+ 0000015A  C3		   *	    ret    00000h
+ 0000015B			displayBoard ENDP
+
+
+				;__________________________________________________________________________________________
+				; printLine
+				;	Sets color of the live square, prints out a line of spaces (0/black if dead, 1/color if alive).
+				;	One line of spaces is the length of the dimension of the board.
+				; 
+				; Receives: liveSquareColor - user integer for color of live square
+				; Returns: (prints to terminal)
+				;__________________________________________________________________________________________
+
+
+ 0000015B			printLine PROC USES ecx
+ 0000015B  51		   *	    push   ecx
+ 0000015C  8B 0D 00000000 R		mov ecx, dim
+ 00000162				L2:	
+ 00000162  B8 00000010				mov eax, 16				;this section sets the text color according to the number in cSquare
+ 00000167  8B 1E				mov ebx, [esi]
+ 00000169  F7 E3				mul ebx					;we know that if the value is zero, no amount of multiplication makes it not zero
+ 0000016B  F7 25 00000005 R			mul liveSquareColor			;this way we can print both 0s and 1s with the same code
+ 00000171  E8 00000000 E			call SetTextColor
+
+ 00000176  B0 20				mov al, " "				;prints the space character with a different background color if it is a 1
+ 00000178  E8 00000000 E			call WriteChar		
+						
+ 0000017D  83 C6 04				ADD esi, 4				;incriments 1 DWORD to the right
+ 00000180  E2 E0			loop L2
+
+
+
+				ret
+ 00000182  59		   *	    pop    ecx
+ 00000183  C3		   *	    ret    00000h
+ 00000184			printLine ENDP
+
+
+				;__________________________________________________________________________________________
+				; checkSquare
+				;	Checks what point of the array ESI is referring to, and finds where that entry would be
+				;	located in a grid, and send the ESI value to the correct check function to discover how 
+				;	many live cells surround it.
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				;__________________________________________________________________________________________
+
+
+ 00000184			checkSquare PROC USES ecx
+					
+					;Finds the number value of the bottom left square (default 10x10 grid, LeftCornerNumber = 91)
+					;LeftCornerNumber = BoredSize - dim + 1
+ 00000184  51		   *	    push   ecx
+ 00000185  8B 15 0000012D R		mov edx, BoredSize
+ 0000018B  2B 15 00000000 R		sub edx, dim
+ 00000191  42				inc edx
+ 00000192  89 15 0000015D R		mov LeftCornerNumber, edx
+
+					;sets edx to be remainder (aka ecx mod dim), used to check if square is on left or right side of grid
+					;ecx mod dim
+ 00000198  8B C1			mov eax, ecx
+ 0000019A  BA 00000000			mov edx, 0
+ 0000019F  F7 35 00000000 R		div dim			;edx = ecx mod dim
+					
+					;eax = ecx + dim
+ 000001A5  A1 00000000 R		mov eax, dim
+ 000001AA  03 C1			add eax, ecx
+									;this section is several carefully nested if statements to send it off to the correct set of logic
+
+						.IF ecx <= dim							;top row
+ 000001AC  3B 0D 00000000 R *	    cmp    ecx, dim
+ 000001B2  77 22	   *	    ja	@C0007
+
+							.IF ecx == 1						;top left corner
+ 000001B4  83 F9 01	   *	    cmp    ecx, 001h
+ 000001B7  75 07	   *	    jne    @C0009
+ 000001B9  E8 00000063						call TopLeftCornerCheck
+
+							.ELSEIF ecx == dim
+ 000001BE  EB 5F	   *	    jmp    @C000B
+ 000001C0		   *@C0009:
+ 000001C0  3B 0D 00000000 R *	    cmp    ecx, dim
+ 000001C6  75 07	   *	    jne    @C000C
+ 000001C8  E8 0000011A						call TopRightCornerCheck			;top right corner
+							
+							.ELSE
+ 000001CD  EB 50	   *	    jmp    @C000E
+ 000001CF		   *@C000C:
+ 000001CF  E8 0000009C						call TopCheck
+							.ENDIF
+							
+						.ELSEIF eax > BoredSize					;bottom row
+ 000001D4  EB 49	   *	    jmp    @C000F
+ 000001D6		   *@C0007:
+ 000001D6  3B 05 0000012D R *	    cmp    eax, BoredSize
+ 000001DC  76 25	   *	    jbe    @C0010
+
+							.IF ecx == BoredSize				;bottom right corner
+ 000001DE  3B 0D 0000012D R *	    cmp    ecx, BoredSize
+ 000001E4  75 07	   *	    jne    @C0012
+ 000001E6  E8 000003B2						call BottomRightCornerCheck
+
+							.ELSEIF ecx == LeftCornerNumber		;bottom left corner
+ 000001EB  EB 32	   *	    jmp    @C0014
+ 000001ED		   *@C0012:
+ 000001ED  3B 0D 0000015D R *	    cmp    ecx, LeftCornerNumber
+ 000001F3  75 07	   *	    jne    @C0015
+ 000001F5  E8 000002DD						call BottomLeftCornerCheck
+
+							.ELSE
+ 000001FA  EB 23	   *	    jmp    @C0017
+ 000001FC		   *@C0015:
+ 000001FC  E8 00000325						call BottomCheck
+							.ENDIF
+							
+
+						.ELSEIF edx == 1						;left side (excluding top and bottom corners)
+ 00000201  EB 1C	   *	    jmp    @C0018
+ 00000203		   *@C0010:
+ 00000203  83 FA 01	   *	    cmp    edx, 001h
+ 00000206  75 07	   *	    jne    @C0019
+
+ 00000208  E8 00000129					call LeftCheck
+
+						.ELSEIF edx == 0						;right side (excluding top and bottom corners)
+ 0000020D  EB 10	   *	    jmp    @C001B
+ 0000020F		   *@C0019:
+ 0000020F  0B D2	   *	    or	edx, edx
+ 00000211  75 07	   *	    jne    @C001C
+
+ 00000213  E8 00000248					call RightCheck
+
+						.ELSE
+ 00000218  EB 05	   *	    jmp    @C001E
+ 0000021A		   *@C001C:
+ 0000021A  E8 0000018E					call CenterCheck					;center squares
+
+						.ENDIF
+ 0000021F		   *@C001E:
+ 0000021F		   *@C001B:
+ 0000021F		   *@C0018:
+ 0000021F		   *@C000F:
+ 0000021F		   *@C000E:
+ 0000021F		   *@C000B:
+ 0000021F		   *@C0017:
+ 0000021F		   *@C0014:
+
+
+				ret
+ 0000021F  59		   *	    pop    ecx
+ 00000220  C3		   *	    ret    00000h
+ 00000221			checkSquare ENDP
+
+
+
+				;__________________________________________________________________________________________
+				; TopLeftCornerCheck
+				;	Checks the number of live squares neighboring the top left corner square.
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;__________________________________________________________________________________________
+
+ 00000221			TopLeftCornerCheck PROC		;this is the only one we will comment, as they are all the same conceptually
+
+ 00000221  C7 05 00000135 R		mov neighbors, 0		;resets our neighbor counter
+	   00000000
+
+ 0000022B  8B 1E			mov ebx, [esi]			;adds the current cell to the count. if it is alive, the value increases by 1
+ 0000022D  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 00000233  03 35 0000014D R		add esi, cRight		;adds the value of the center right cell
+ 00000239  8B 1E			mov ebx, [esi]
+ 0000023B  2B 35 00000145 R		sub esi, cLeft
+ 00000241  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000247  03 35 00000155 R		add esi, bMiddle		;adds the value of the bottom middle cell
+ 0000024D  8B 1E			mov ebx, [esi]
+ 0000024F  2B 35 00000155 R		sub esi, bMiddle
+ 00000255  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 0000025B  03 35 00000159 R		add esi, bRight		;adds the value of the bottom right cell
+ 00000261  8B 1E			mov ebx, [esi]
+ 00000263  2B 35 00000159 R		sub esi, bRight
+ 00000269  01 1D 00000135 R		add neighbors, ebx
+
+ 0000026F  C3			ret
+ 00000270			TopLeftCornerCheck ENDP
+
+				;__________________________________________________________________________________________
+				; TopCheck
+				;	Checks the number of live squares neighboring the top row of squares (excluding corners).
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;
+				;	See TopLeftCornerCheck for commenting of code in function, almost exactly the same.
+				;__________________________________________________________________________________________
+
+ 00000270			TopCheck PROC
+
+ 00000270  C7 05 00000135 R		mov neighbors, 0
+	   00000000
+
+ 0000027A  2B 35 00000145 R		sub esi, cLeft
+ 00000280  8B 1E			mov ebx, [esi]
+ 00000282  03 35 0000014D R		add esi, cRight
+ 00000288  01 1D 00000135 R		add neighbors, ebx
+
+
+ 0000028E  8B 1E			mov ebx, [esi]
+ 00000290  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 00000296  03 35 0000014D R		add esi, cRight
+ 0000029C  8B 1E			mov ebx, [esi]
+ 0000029E  2B 35 00000145 R		sub esi, cLeft
+ 000002A4  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000002AA  03 35 00000151 R		add esi, bLeft
+ 000002B0  8B 1E			mov ebx, [esi]
+ 000002B2  2B 35 00000151 R		sub esi, bLeft
+ 000002B8  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000002BE  03 35 00000155 R		add esi, bMiddle
+ 000002C4  8B 1E			mov ebx, [esi]
+ 000002C6  2B 35 00000155 R		sub esi, bMiddle
+ 000002CC  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 000002D2  03 35 00000159 R		add esi, bRight
+ 000002D8  8B 1E			mov ebx, [esi]
+ 000002DA  2B 35 00000159 R		sub esi, bRight
+ 000002E0  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000002E6  C3			ret
+ 000002E7			TopCheck ENDP
+
+
+				;__________________________________________________________________________________________
+				; TopRightCornerCheck
+				;	Checks the number of live squares neighboring the top right corner.
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;
+				;	See TopLeftCornerCheck for commenting of code in function, almost exactly the same.
+				;__________________________________________________________________________________________
+
+ 000002E7			TopRightCornerCheck PROC
+
+ 000002E7  C7 05 00000135 R		mov neighbors, 0
+	   00000000
+
+ 000002F1  2B 35 00000145 R		sub esi, cLeft
+ 000002F7  8B 1E			mov ebx, [esi]
+ 000002F9  03 35 0000014D R		add esi, cRight
+ 000002FF  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000305  8B 1E			mov ebx, [esi]
+ 00000307  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 0000030D  03 35 00000151 R		add esi, bLeft
+ 00000313  8B 1E			mov ebx, [esi]
+ 00000315  2B 35 00000151 R		sub esi, bLeft
+ 0000031B  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000321  03 35 00000155 R		add esi, bMiddle
+ 00000327  8B 1E			mov ebx, [esi]
+ 00000329  2B 35 00000155 R		sub esi, bMiddle
+ 0000032F  01 1D 00000135 R		add neighbors, ebx
+					
+ 00000335  C3			ret
+ 00000336			TopRightCornerCheck ENDP
+
+				;__________________________________________________________________________________________
+				; LeftCheck
+				;	Checks the number of live squares neighboring the left side of the grid (excluding corners).
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;
+				;	See TopLeftCornerCheck for commenting of code in function, almost exactly the same.
+				;__________________________________________________________________________________________
+
+ 00000336			LeftCheck PROC
+
+ 00000336  C7 05 00000135 R		mov neighbors, 0
+	   00000000
+
+ 00000340  2B 35 0000013D R		sub esi, uMiddle
+ 00000346  8B 1E			mov ebx, [esi]
+ 00000348  03 35 0000013D R		add esi, uMiddle
+ 0000034E  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000354  2B 35 00000141 R		sub esi, uRight
+ 0000035A  8B 1E			mov ebx, [esi]
+ 0000035C  03 35 00000141 R		add esi, uRight
+ 00000362  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000368  8B 1E			mov ebx, [esi]
+ 0000036A  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 00000370  03 35 0000014D R		add esi, cRight
+ 00000376  8B 1E			mov ebx, [esi]
+ 00000378  2B 35 00000145 R		sub esi, cLeft
+ 0000037E  01 1D 00000135 R		add neighbors, ebx
+
+ 00000384  03 35 00000155 R		add esi, bMiddle
+ 0000038A  8B 1E			mov ebx, [esi]
+ 0000038C  2B 35 00000155 R		sub esi, bMiddle
+ 00000392  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 00000398  03 35 00000159 R		add esi, bRight
+ 0000039E  8B 1E			mov ebx, [esi]
+ 000003A0  2B 35 00000159 R		sub esi, bRight
+ 000003A6  01 1D 00000135 R		add neighbors, ebx
+
+ 000003AC  C3			ret
+ 000003AD			LeftCheck ENDP
+
+
+				;__________________________________________________________________________________________
+				; CenterCheck
+				;	Checks the number of live squares neighboring the center squares.
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;
+				;	See TopLeftCornerCheck for commenting of code in function, almost exactly the same.
+				;__________________________________________________________________________________________
+
+ 000003AD			CenterCheck PROC
+
+ 000003AD  C7 05 00000135 R		mov neighbors, 0
+	   00000000
+
+ 000003B7  2B 35 00000139 R		sub esi, uLeft
+ 000003BD  8B 1E			mov ebx, [esi]
+ 000003BF  03 35 00000139 R		add esi, uLeft
+ 000003C5  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000003CB  2B 35 0000013D R		sub esi, uMiddle
+ 000003D1  8B 1E			mov ebx, [esi]
+ 000003D3  03 35 0000013D R		add esi, uMiddle
+ 000003D9  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000003DF  2B 35 00000141 R		sub esi, uRight
+ 000003E5  8B 1E			mov ebx, [esi]
+ 000003E7  03 35 00000141 R		add esi, uRight
+ 000003ED  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000003F3  2B 35 00000145 R		sub esi, cLeft
+ 000003F9  8B 1E			mov ebx, [esi]
+ 000003FB  03 35 0000014D R		add esi, cRight
+ 00000401  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000407  8B 1E			mov ebx, [esi]
+ 00000409  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 0000040F  03 35 0000014D R		add esi, cRight
+ 00000415  8B 1E			mov ebx, [esi]
+ 00000417  2B 35 00000145 R		sub esi, cLeft
+ 0000041D  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000423  03 35 00000151 R		add esi, bLeft
+ 00000429  8B 1E			mov ebx, [esi]
+ 0000042B  2B 35 00000151 R		sub esi, bLeft
+ 00000431  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000437  03 35 00000155 R		add esi, bMiddle
+ 0000043D  8B 1E			mov ebx, [esi]
+ 0000043F  2B 35 00000155 R		sub esi, bMiddle
+ 00000445  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 0000044B  03 35 00000159 R		add esi, bRight
+ 00000451  8B 1E			mov ebx, [esi]
+ 00000453  2B 35 00000159 R		sub esi, bRight
+ 00000459  01 1D 00000135 R		add neighbors, ebx
+
+ 0000045F  C3			ret
+ 00000460			CenterCheck ENDP
+
+
+				;__________________________________________________________________________________________
+				; RightCheck
+				;	Checks the number of live squares neighboring the right side of the grid (excluding corners).
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;
+				;	See TopLeftCornerCheck for commenting of code in function, almost exactly the same.
+				;__________________________________________________________________________________________
+
+ 00000460			RightCheck PROC
+
+ 00000460  C7 05 00000135 R		mov neighbors, 0
+	   00000000
+
+ 0000046A  2B 35 00000139 R		sub esi, uLeft
+ 00000470  8B 1E			mov ebx, [esi]
+ 00000472  03 35 00000139 R		add esi, uLeft
+ 00000478  01 1D 00000135 R		add neighbors, ebx
+
+
+ 0000047E  2B 35 0000013D R		sub esi, uMiddle
+ 00000484  8B 1E			mov ebx, [esi]
+ 00000486  03 35 0000013D R		add esi, uMiddle
+ 0000048C  01 1D 00000135 R		add neighbors, ebx
+
+					
+ 00000492  2B 35 00000145 R		sub esi, cLeft
+ 00000498  8B 1E			mov ebx, [esi]
+ 0000049A  03 35 0000014D R		add esi, cRight
+ 000004A0  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000004A6  8B 1E			mov ebx, [esi]
+ 000004A8  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000004AE  03 35 00000151 R		add esi, bLeft
+ 000004B4  8B 1E			mov ebx, [esi]
+ 000004B6  2B 35 00000151 R		sub esi, bLeft
+ 000004BC  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000004C2  03 35 00000155 R		add esi, bMiddle
+ 000004C8  8B 1E			mov ebx, [esi]
+ 000004CA  2B 35 00000155 R		sub esi, bMiddle
+ 000004D0  01 1D 00000135 R		add neighbors, ebx
+					
+ 000004D6  C3			ret
+ 000004D7			RightCheck ENDP
+
+
+				;__________________________________________________________________________________________
+				; BottomLeftCornerCheck
+				;	Checks the number of live squares neighboring the bottom left corner square.
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;
+				;	See TopLeftCornerCheck for commenting of code in function, almost exactly the same.
+				;__________________________________________________________________________________________
+
+ 000004D7			BottomLeftCornerCheck PROC
+
+ 000004D7  C7 05 00000135 R		mov neighbors, 0
+	   00000000
+
+ 000004E1  2B 35 0000013D R		sub esi, uMiddle
+ 000004E7  8B 1E			mov ebx, [esi]
+ 000004E9  03 35 0000013D R		add esi, uMiddle
+ 000004EF  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000004F5  2B 35 00000141 R		sub esi, uRight
+ 000004FB  8B 1E			mov ebx, [esi]
+ 000004FD  03 35 00000141 R		add esi, uRight
+ 00000503  01 1D 00000135 R		add neighbors, ebx
+
+ 00000509  8B 1E			mov ebx, [esi]
+ 0000050B  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 00000511  03 35 0000014D R		add esi, cRight
+ 00000517  8B 1E			mov ebx, [esi]
+ 00000519  2B 35 00000145 R		sub esi, cLeft
+ 0000051F  01 1D 00000135 R		add neighbors, ebx
+
+ 00000525  C3			ret
+ 00000526			BottomLeftCornerCheck ENDP
+
+
+				;__________________________________________________________________________________________
+				; BottomCheck
+				;	Checks the number of live squares neighboring the bottom row (excluding corners).
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;
+				;	See TopLeftCornerCheck for commenting of code in function, almost exactly the same.
+				;__________________________________________________________________________________________
+
+ 00000526			BottomCheck PROC
+
+ 00000526  C7 05 00000135 R		mov neighbors, 0
+	   00000000
+
+ 00000530  2B 35 00000139 R		sub esi, uLeft
+ 00000536  8B 1E			mov ebx, [esi]
+ 00000538  03 35 00000139 R		add esi, uLeft
+ 0000053E  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000544  2B 35 0000013D R		sub esi, uMiddle
+ 0000054A  8B 1E			mov ebx, [esi]
+ 0000054C  03 35 0000013D R		add esi, uMiddle
+ 00000552  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000558  2B 35 00000141 R		sub esi, uRight
+ 0000055E  8B 1E			mov ebx, [esi]
+ 00000560  03 35 00000141 R		add esi, uRight
+ 00000566  01 1D 00000135 R		add neighbors, ebx
+
+
+ 0000056C  2B 35 00000145 R		sub esi, cLeft
+ 00000572  8B 1E			mov ebx, [esi]
+ 00000574  03 35 0000014D R		add esi, cRight
+ 0000057A  01 1D 00000135 R		add neighbors, ebx
+
+
+ 00000580  8B 1E			mov ebx, [esi]
+ 00000582  01 1D 00000135 R		add neighbors, ebx
+					
+
+ 00000588  03 35 0000014D R		add esi, cRight
+ 0000058E  8B 1E			mov ebx, [esi]
+ 00000590  2B 35 00000145 R		sub esi, cLeft
+ 00000596  01 1D 00000135 R		add neighbors, ebx
+
+
+
+ 0000059C  C3			ret
+ 0000059D			BottomCheck ENDP
+
+
+				;__________________________________________________________________________________________
+				; BottomRightCornerCheck
+				;	Checks the number of live squares neighboring the bottom right corner square.
+				; 
+				; Receives: ESI - memory address pointing to an "entry" in pbored "array"
+				; Returns: neighbors - tracks number of live neighbors surrounding a cell (including itself)
+				;
+				;	See TopLeftCornerCheck for commenting of code in function, almost exactly the same.
+				;__________________________________________________________________________________________
+
+ 0000059D			BottomRightCornerCheck PROC
+
+ 0000059D  C7 05 00000135 R		mov neighbors, 0
+	   00000000
+
+ 000005A7  2B 35 00000139 R		sub esi, uLeft
+ 000005AD  8B 1E			mov ebx, [esi]
+ 000005AF  03 35 00000139 R		add esi, uLeft
+ 000005B5  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000005BB  2B 35 0000013D R		sub esi, uMiddle
+ 000005C1  8B 1E			mov ebx, [esi]
+ 000005C3  03 35 0000013D R		add esi, uMiddle
+ 000005C9  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000005CF  2B 35 00000145 R		sub esi, cLeft
+ 000005D5  8B 1E			mov ebx, [esi]
+ 000005D7  03 35 0000014D R		add esi, cRight
+ 000005DD  01 1D 00000135 R		add neighbors, ebx
+
+
+ 000005E3  8B 1E			mov ebx, [esi]
+ 000005E5  01 1D 00000135 R		add neighbors, ebx	
+
+ 000005EB  C3			ret
+ 000005EC			BottomRightCornerCheck ENDP
+
+
+				;__________________________________________________________________________________________
+				; TNG
+				;	Loops through each cell and determines if it should be alive or dead in the next generation,
+				;	sets fbored with the future generation, then copies fbored into pbored.
+				; 
+				; Receives: fbored - memory location of future "array"
+				; Returns: pbored - set with the next generation
+				;__________________________________________________________________________________________
+
+ 000005EC			TNG PROC uses ecx
+ 000005EC  51		   *	    push   ecx
+ 000005ED  8B 0D 0000012D R	mov ecx, BoredSize
+ 000005F3  8B 35 00000165 R	mov esi, fbored					;because we count backwards, we go to fbored and subtract 4, gets us to the end of pbored
+ 000005F9  83 EE 04		sub esi, 4
+ 000005FC  B8 00000000		mov eax, 0	
+ 00000601				L22:							;this loop goes through the whole array, backwords because the loop counter counts down
+
+ 00000601  E8 FFFFFB7E				call CheckSquare			;goes and finds the number of alive cells and leaves it in neighbors
+
+ 00000606  E8 0000000C				call its_quantumly_alive		;uses the value in neighbors to determine the what the next generation should be, and sets it there
+						
+
+ 0000060B  83 EE 04				sub esi, 4
+ 0000060E  E2 F1			LOOP L22
+
+ 00000610  E8 00000068			call f_to_p
+
+				ret
+ 00000615  59		   *	    pop    ecx
+ 00000616  C3		   *	    ret    00000h
+ 00000617			TNG ENDP
+
+				;__________________________________________________________________________________________
+				; its_quantumly_alive
+				;	Uses neighbors variable value to determine if the cell in question should live or die
+				;	in the next generation.
+				; 
+				; Receives: neighbors - holds number of live neighbors for cell in question (including self)
+				; Returns: fbored - sets corresponding fbored cell to alive or dead, based on rules of game
+				;__________________________________________________________________________________________
+
+ 00000617			its_quantumly_alive PROC uses esi
+
+ 00000617  56		   *	    push   esi
+ 00000618  A1 00000135 R	mov eax, neighbors
+				.IF eax == 3							;checks if it will be alive, then sets the value in the future board
+ 0000061D  83 F8 03	   *	    cmp    eax, 003h
+ 00000620  75 15	   *	    jne    @C001F
+ 00000622  03 35 00000131 R		add esi, bored_size_bytes
+ 00000628  BB 00000001			mov ebx, 1
+ 0000062D  89 1E			mov [esi], ebx
+ 0000062F  2B 35 00000131 R		sub esi, bored_size_bytes
+				.ELSEIF eax == 4						;if it is 4, then it needs to check if the cell itself is alive or not. If it is alive, then it will be alive, otherwise dead
+ 00000635  EB 44	   *	    jmp    @C0021
+ 00000637		   *@C001F:
+ 00000637  83 F8 04	   *	    cmp    eax, 004h
+ 0000063A  75 2C	   *	    jne    @C0022
+ 0000063C  8B 1E			mov ebx, [esi]
+
+					.IF ebx == 1
+ 0000063E  83 FB 01	   *	    cmp    ebx, 001h
+ 00000641  75 10	   *	    jne    @C0024
+ 00000643  03 35 00000131 R			add esi, bored_size_bytes
+ 00000649  89 1E				mov [esi], ebx
+ 0000064B  2B 35 00000131 R			sub esi, bored_size_bytes
+
+					.ELSE
+ 00000651  EB 28	   *	    jmp    @C0026
+ 00000653		   *@C0024:
+ 00000653  03 35 00000131 R			add esi, bored_size_bytes
+ 00000659  BB 00000000				mov ebx, 0					;need to change back to 0
+ 0000065E  89 1E				mov [esi], ebx
+ 00000660  2B 35 00000131 R			sub esi, bored_size_bytes
+					.ENDIF
+				.ELSE
+ 00000666  EB 13	   *	    jmp    @C0027
+ 00000668		   *@C0022:
+ 00000668  03 35 00000131 R		add esi, bored_size_bytes			;all other numbers die, either to overpopulation or underpopulation
+ 0000066E  BB 00000000			mov ebx, 0						;can change to zero
+ 00000673  89 1E			mov [esi], ebx
+ 00000675  2B 35 00000131 R		sub esi, bored_size_bytes
+				.ENDIF
+ 0000067B		   *@C0027:
+ 0000067B		   *@C0021:
+ 0000067B		   *@C0026:
+
+				ret
+ 0000067B  5E		   *	    pop    esi
+ 0000067C  C3		   *	    ret    00000h
+ 0000067D			its_quantumly_alive ENDP
+
+
+
+				;__________________________________________________________________________________________
+				; f_to_p
+				;	Copies fbored into pbored.
+				; 
+				; Receives: fbored - memory location of future "array"
+				; Returns: pbored - now identical to contents of fbored
+				;__________________________________________________________________________________________
+
+
+ 0000067D			f_to_p PROC uses ecx
+ 0000067D  51		   *	    push   ecx
+ 0000067E  8B 35 00000165 R	mov esi, fbored
+ 00000684  8B 0D 0000012D R	mov ecx, BoredSize
+
+ 0000068A			L66:								;pretty simple, copies the future to the present cell by cell
+ 0000068A  8B 06			mov eax, [esi]
+ 0000068C  2B 35 00000131 R		sub esi, bored_size_bytes
+ 00000692  89 06			mov [esi], eax
+ 00000694  03 35 00000131 R		add esi, bored_size_bytes
+ 0000069A  83 C6 04			add esi, 4
+ 0000069D  E2 EB		loop L66
+
+				ret
+ 0000069F  59		   *	    pop    ecx
+ 000006A0  C3		   *	    ret    00000h
+ 000006A1			f_to_p ENDP
+
+
+
+				;__________________________________________________________________________________________
+				; game_loop
+				;	Loop runs 25 generations of the game, delaying (so the user can see each generation),
+				;	calling the logic on the cells, then displaying the next generation.
+				; 
+				; Returns: (Prints to terminal)
+				;__________________________________________________________________________________________
+
+ 000006A1			game_loop PROC
+ 000006A1  B9 000003E7			mov ecx, 999			;this sets how many generations are made before it quits the program
+ 000006A6				L16:
+
+ 000006A6  B8 0000012C				mov eax,300
+ 000006AB  E8 00000000 E			call Delay		;gives time for the user to observe before going on
+
+ 000006B0  E8 FFFFFF37				call TNG			;does the math for the next generation(haha, aren't we funny)
+
+
+ 000006B5  E8 FFFFFA6E				call displayBoard	;prints out the new board
+
+ 000006BA  E2 EA			loop L16
+
+ 000006BC  C3			ret
+ 000006BD			game_loop ENDP
+
+
+				;__________________________________________________________________________________________
+				; glider
+				;	Places a glider pattern in the middle of pbored.
+				; 
+				; Receives: pbored - memory location of present array
+				;		  uMiddle, cRight, bLeft, bMiddle, bRight - variables to locate where in regards to the center square the pattern will go
+				; Returns: pbored - all 0s with 1s in the glider pattern positions
+				;__________________________________________________________________________________________
+
+ 000006BD			glider PROC 
+
+ 000006BD  BA 00000000		mov edx, 0					;this section sets our indexor, esi, to the center of the board(only works for odd numbers, since that would be the center)
+ 000006C2  8B 35 00000161 R	mov esi, pbored
+ 000006C8  A1 00000131 R	mov eax, bored_size_bytes
+ 000006CD  BB 00000002		mov ebx, 2
+ 000006D2  F7 F3		div ebx
+ 000006D4  2B C3		sub eax, ebx
+ 000006D6  03 F0		add esi, eax
+
+
+				;sets edx to be remainder (aka dim mod 2), used to check if dim is even or odd
+				;dim mod 2
+ 000006D8  A1 00000000 R	mov eax, dim
+ 000006DD  BA 00000000		mov edx, 0
+ 000006E2  BB 00000002		mov ebx, 2
+ 000006E7  F7 F3		div ebx			;edx = dim mod 2
+
+				;this checks if it is odd, and if so lets it through. if even, it adds half of the line size and subtracts 2 bytes, which puts us at the center of the board for even numbers
+				.IF edx == 0
+ 000006E9  0B D2	   *	    or	edx, edx
+ 000006EB  75 11	   *	    jne    @C0028
+ 000006ED  A1 00000000 R		mov eax, dim
+ 000006F2  BB 00000002			mov ebx, 2
+ 000006F7  F7 E3			mul ebx
+ 000006F9  83 E8 02			sub eax, 2
+ 000006FC  03 F0			add esi, eax
+				.ENDIF
+ 000006FE		   *@C0028:
+
+
+
+ 000006FE  BB 00000001		mov ebx, 1			;sets it to 1 so we are putting in live cells
+
+ 00000703  2B 35 0000013D R	sub esi, uMiddle		;the rest of this is just painting the correct cells to be alive
+ 00000709  89 1E		mov [esi], ebx
+ 0000070B  03 35 0000013D R	add esi, uMiddle
+
+ 00000711  03 35 0000014D R	add esi, cRight
+ 00000717  89 1E		mov [esi], ebx
+ 00000719  2B 35 0000014D R	sub esi, cRight
+
+ 0000071F  03 35 00000151 R	add esi, bLeft
+ 00000725  89 1E		mov [esi], ebx
+ 00000727  2B 35 00000151 R	sub esi, bLeft
+
+ 0000072D  03 35 00000155 R	add esi, bMiddle
+ 00000733  89 1E		mov [esi], ebx
+ 00000735  2B 35 00000155 R	sub esi, bMiddle
+
+ 0000073B  03 35 00000159 R	add esi, bRight
+ 00000741  89 1E		mov [esi], ebx
+ 00000743  2B 35 00000159 R	sub esi, bRight
+
+ 00000749  C3			ret
+ 0000074A			glider ENDP
+
+
+
+				;__________________________________________________________________________________________
+				; flasher
+				;	Places a flasher pattern in the middle of pbored.
+				; 
+				; Receives: pbored - memory location of present array
+				;		  cLeft, bMiddle, cRight - variables to locate where in regards to the center square the pattern will go
+				; Returns: pbored - all 0s with 1s in the flasher pattern positions
+				;__________________________________________________________________________________________
+
+ 0000074A			flasher PROC ;this whole thing is the same as glider, just look there for comments
+
+ 0000074A  BA 00000000		mov edx, 0
+ 0000074F  8B 35 00000161 R	mov esi, pbored
+ 00000755  A1 00000131 R	mov eax, bored_size_bytes
+ 0000075A  BB 00000002		mov ebx, 2
+ 0000075F  F7 F3		div ebx
+ 00000761  2B C3		sub eax, ebx
+ 00000763  03 F0		add esi, eax
+
+				;sets edx to be remainder (aka dim mod 2), used to check if dim is even or odd
+				;dim mod 2
+ 00000765  A1 00000000 R	mov eax, dim
+ 0000076A  BA 00000000		mov edx, 0
+ 0000076F  BB 00000002		mov ebx, 2
+ 00000774  F7 F3		div ebx			;edx = dim mod 2
+
+				.IF edx == 0
+ 00000776  0B D2	   *	    or	edx, edx
+ 00000778  75 11	   *	    jne    @C002A
+ 0000077A  A1 00000000 R		mov eax, dim
+ 0000077F  BB 00000002			mov ebx, 2
+ 00000784  F7 E3			mul ebx
+ 00000786  83 E8 02			sub eax, 2
+ 00000789  03 F0			add esi, eax
+				.ENDIF
+ 0000078B		   *@C002A:
+
+
+
+				;SET ESI TO THE MIDDLE OF THE BOARD HERE
+
+ 0000078B  BB 00000001		mov ebx, 1
+
+ 00000790  2B 35 00000145 R	sub esi, cLeft
+ 00000796  89 1E		mov [esi], ebx
+ 00000798  03 35 00000145 R	add esi, cLeft
+
+ 0000079E  2B 35 0000013D R	sub esi, uMiddle
+ 000007A4  89 1E		mov [esi], ebx
+ 000007A6  03 35 0000013D R	add esi, uMiddle
+
+ 000007AC  89 1E		mov [esi], ebx
+
+ 000007AE  03 35 0000014D R	add esi, cRight
+ 000007B4  89 1E		mov [esi], ebx
+ 000007B6  2B 35 0000014D R	sub esi, cRight
+
+
+
+ 000007BC  C3			ret
+ 000007BD			flasher ENDP
+
+				;__________________________________________________________________________________________
+				; bomb
+				;	Places a bomb pattern in the middle of pbored.
+				; 
+				; Receives: pbored - memory location of present array
+				;		  uMiddle, uRight, cLeft, bMiddle, bRight - variables to locate where in regards to the center square the pattern will go
+				; Returns: pbored - all 0s with 1s in the bomb pattern positions
+				;__________________________________________________________________________________________
+
+ 000007BD			bomb PROC		;again, same as glider, just look there for comments
+
+ 000007BD  BA 00000000		mov edx, 0
+ 000007C2  8B 35 00000161 R	mov esi, pbored
+ 000007C8  A1 00000131 R	mov eax, bored_size_bytes
+ 000007CD  BB 00000002		mov ebx, 2
+ 000007D2  F7 F3		div ebx
+ 000007D4  2B C3		sub eax, ebx
+ 000007D6  03 F0		add esi, eax
+
+				;sets edx to be remainder (aka dim mod 2), used to check if dim is even or odd
+				;dim mod 2
+ 000007D8  A1 00000000 R	mov eax, dim
+ 000007DD  BA 00000000		mov edx, 0
+ 000007E2  BB 00000002		mov ebx, 2
+ 000007E7  F7 F3		div ebx			;edx = dim mod 2
+
+				.IF edx == 0
+ 000007E9  0B D2	   *	    or	edx, edx
+ 000007EB  75 11	   *	    jne    @C002C
+ 000007ED  A1 00000000 R		mov eax, dim
+ 000007F2  BB 00000002			mov ebx, 2
+ 000007F7  F7 E3			mul ebx
+ 000007F9  83 E8 02			sub eax, 2
+ 000007FC  03 F0			add esi, eax
+				.ENDIF
+ 000007FE		   *@C002C:
+
+
+
+				;SET ESI TO THE MIDDLE OF THE BOARD HERE
+
+ 000007FE  BB 00000001		mov ebx, 1
+
+ 00000803  2B 35 0000013D R	sub esi, uMiddle
+ 00000809  89 1E		mov [esi], ebx
+ 0000080B  03 35 0000013D R	add esi, uMiddle
+
+ 00000811  2B 35 00000141 R	sub esi, uRight
+ 00000817  89 1E		mov [esi], ebx
+ 00000819  03 35 00000141 R	add esi, uRight
+
+ 0000081F  2B 35 00000145 R	sub esi, cLeft
+ 00000825  89 1E		mov [esi], ebx
+ 00000827  03 35 00000145 R	add esi, cLeft
+
+ 0000082D  89 1E		mov [esi], ebx
+
+ 0000082F  03 35 00000155 R	add esi, bMiddle
+ 00000835  89 1E		mov [esi], ebx
+ 00000837  2B 35 00000155 R	sub esi, bMiddle
+
+ 0000083D  03 35 00000159 R	add esi, bRight
+ 00000843  89 1E		mov [esi], ebx
+ 00000845  2B 35 00000159 R	sub esi, bRight
+
+ 0000084B  83 C6 08		add esi, 8
+ 0000084E  89 1E		mov [esi], ebx
+ 00000850  83 EE 08		sub esi, 8
+
+ 00000853  C3			ret
+ 00000854			bomb ENDP
+
+				;__________________________________________________________________________________________
+				; patterns
+				;	Grabs user input to determine which pattern to fill pbored with.
+				; 
+				; Receives: user input using ReadDec
+				; Returns: pbored - updated with user chosen pattern
+				;__________________________________________________________________________________________
+
+ 00000854			patterns PROC
+ 00000854  BA 000000DA R		mov edx, OFFSET prompt4
+ 00000859  E8 00000000 E		call WriteString
+					
+ 0000085E  E8 00000000 E		call ReadDec
+										;this reads in the input from the user, then calls the correct pattern
+					.IF eax == 1
+ 00000863  83 F8 01	   *	    cmp    eax, 001h
+ 00000866  75 07	   *	    jne    @C002E
+ 00000868  E8 FFFFFE50				call glider
+					.ELSEIF eax == 2
+ 0000086D  EB 16	   *	    jmp    @C0030
+ 0000086F		   *@C002E:
+ 0000086F  83 F8 02	   *	    cmp    eax, 002h
+ 00000872  75 07	   *	    jne    @C0031
+ 00000874  E8 FFFFFED1				call flasher
+					.ELSEIF eax == 3
+ 00000879  EB 0A	   *	    jmp    @C0033
+ 0000087B		   *@C0031:
+ 0000087B  83 F8 03	   *	    cmp    eax, 003h
+ 0000087E  75 05	   *	    jne    @C0034
+ 00000880  E8 FFFFFF38				call bomb
+					.ENDIF
+ 00000885		   *@C0034:
+ 00000885		   *@C0033:
+ 00000885		   *@C0030:
+
+ 00000885  E8 00000000 E		call Clrscr
+
+ 0000088A  C3			ret
+ 0000088B			patterns ENDP
+
+
+				END main
+Microsoft (R) Macro Assembler Version 14.27.29112.0	    05/22/21 13:50:37
+Final Project	(main.asm				     Symbols 2 - 1
+
+
+
+
+Structures and Unions:
+
+                N a m e                  Size
+                                         Offset      Type
+
+CONSOLE_CURSOR_INFO  . . . . . .	 00000008
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  bVisible . . . . . . . . . . .	 00000004	 DWord
+CONSOLE_SCREEN_BUFFER_INFO . . .	 00000016
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  dwCursorPosition . . . . . . .	 00000004	 DWord
+  wAttributes  . . . . . . . . .	 00000008	 Word
+  srWindow . . . . . . . . . . .	 0000000A	 QWord
+  dwMaximumWindowSize  . . . . .	 00000012	 DWord
+COORD  . . . . . . . . . . . . .	 00000004
+  X  . . . . . . . . . . . . . .	 00000000	 Word
+  Y  . . . . . . . . . . . . . .	 00000002	 Word
+FILETIME . . . . . . . . . . . .	 00000008
+  loDateTime . . . . . . . . . .	 00000000	 DWord
+  hiDateTime . . . . . . . . . .	 00000004	 DWord
+FOCUS_EVENT_RECORD . . . . . . .	 00000004
+  bSetFocus  . . . . . . . . . .	 00000000	 DWord
+FPU_ENVIRON  . . . . . . . . . .	 0000001C
+  controlWord  . . . . . . . . .	 00000000	 Word
+  statusWord . . . . . . . . . .	 00000004	 Word
+  tagWord  . . . . . . . . . . .	 00000008	 Word
+  instrPointerOffset . . . . . .	 0000000C	 DWord
+  instrPointerSelector . . . . .	 00000010	 DWord
+  operandPointerOffset . . . . .	 00000014	 DWord
+  operandPointerSelector . . . .	 00000018	 Word
+INPUT_RECORD . . . . . . . . . .	 00000014
+  EventType  . . . . . . . . . .	 00000000	 Word
+  Event  . . . . . . . . . . . .	 00000004	 XmmWord
+  bKeyDown . . . . . . . . . . .	 00000000	 DWord
+  wRepeatCount . . . . . . . . .	 00000004	 Word
+  wVirtualKeyCode  . . . . . . .	 00000006	 Word
+  wVirtualScanCode . . . . . . .	 00000008	 Word
+  uChar  . . . . . . . . . . . .	 0000000A	 Word
+  UnicodeChar  . . . . . . . . .	 00000000	 Word
+  AsciiChar  . . . . . . . . . .	 00000000	 Byte
+  dwControlKeyState  . . . . . .	 0000000C	 DWord
+  dwMousePosition  . . . . . . .	 00000000	 DWord
+  dwButtonState  . . . . . . . .	 00000004	 DWord
+  dwMouseControlKeyState . . . .	 00000008	 DWord
+  dwEventFlags . . . . . . . . .	 0000000C	 DWord
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+  dwCommandId  . . . . . . . . .	 00000000	 DWord
+  bSetFocus  . . . . . . . . . .	 00000000	 DWord
+KEY_EVENT_RECORD . . . . . . . .	 00000010
+  bKeyDown . . . . . . . . . . .	 00000000	 DWord
+  wRepeatCount . . . . . . . . .	 00000004	 Word
+  wVirtualKeyCode  . . . . . . .	 00000006	 Word
+  wVirtualScanCode . . . . . . .	 00000008	 Word
+  uChar  . . . . . . . . . . . .	 0000000A	 Word
+  UnicodeChar  . . . . . . . . .	 00000000	 Word
+  AsciiChar  . . . . . . . . . .	 00000000	 Byte
+  dwControlKeyState  . . . . . .	 0000000C	 DWord
+MENU_EVENT_RECORD  . . . . . . .	 00000004
+  dwCommandId  . . . . . . . . .	 00000000	 DWord
+MOUSE_EVENT_RECORD . . . . . . .	 00000010
+  dwMousePosition  . . . . . . .	 00000000	 DWord
+  dwButtonState  . . . . . . . .	 00000004	 DWord
+  dwMouseControlKeyState . . . .	 00000008	 DWord
+  dwEventFlags . . . . . . . . .	 0000000C	 DWord
+SMALL_RECT . . . . . . . . . . .	 00000008
+  Left . . . . . . . . . . . . .	 00000000	 Word
+  Top  . . . . . . . . . . . . .	 00000002	 Word
+  Right  . . . . . . . . . . . .	 00000004	 Word
+  Bottom . . . . . . . . . . . .	 00000006	 Word
+SYSTEMTIME . . . . . . . . . . .	 00000010
+  wYear  . . . . . . . . . . . .	 00000000	 Word
+  wMonth . . . . . . . . . . . .	 00000002	 Word
+  wDayOfWeek . . . . . . . . . .	 00000004	 Word
+  wDay . . . . . . . . . . . . .	 00000006	 Word
+  wHour  . . . . . . . . . . . .	 00000008	 Word
+  wMinute  . . . . . . . . . . .	 0000000A	 Word
+  wSecond  . . . . . . . . . . .	 0000000C	 Word
+  wMilliseconds  . . . . . . . .	 0000000E	 Word
+WINDOW_BUFFER_SIZE_RECORD  . . .	 00000004
+  dwSize . . . . . . . . . . . .	 00000000	 DWord
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+FLAT . . . . . . . . . . . . . .	GROUP
+STACK  . . . . . . . . . . . . .	32 Bit	 00001000 Para	  Stack	  'STACK'	 
+_DATA  . . . . . . . . . . . . .	32 Bit	 00000169 Para	  Public  'DATA'	
+_TEXT  . . . . . . . . . . . . .	32 Bit	 0000088B Para	  Public  'CODE'	
+
+
+Procedures, parameters, and locals:
+
+                N a m e                 Type     Value    Attr
+
+BottomCheck  . . . . . . . . . .	P Near	 00000526 _TEXT	Length= 00000077 Public STDCALL
+BottomLeftCornerCheck  . . . . .	P Near	 000004D7 _TEXT	Length= 0000004F Public STDCALL
+BottomRightCornerCheck . . . . .	P Near	 0000059D _TEXT	Length= 0000004F Public STDCALL
+CenterCheck  . . . . . . . . . .	P Near	 000003AD _TEXT	Length= 000000B3 Public STDCALL
+CloseFile  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CloseHandle  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Clrscr . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CreateFileA  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+CreateOutputFile . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Crlf . . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Delay  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+DumpMem  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+DumpRegs . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ExitProcess  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FileTimeToDosDateTime  . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FileTimeToSystemTime . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FlushConsoleInputBuffer  . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+FormatMessageA . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetCommandLineA  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetCommandTail . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleCP . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleCursorInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleMode . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetConsoleScreenBufferInfo . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetDateTime  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetFileTime  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetKeyState  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetLastError . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetLocalTime . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetMaxXY . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetMseconds  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetNumberOfConsoleInputEvents  .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetProcessHeap . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetStdHandle . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetSystemTime  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetTextColor . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+GetTickCount . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Gotoxy . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapAlloc  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapCreate . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapDestroy  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapFree . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+HeapSize . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+IsDigit  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+LeftCheck  . . . . . . . . . . .	P Near	 00000336 _TEXT	Length= 00000077 Public STDCALL
+LocalFree  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MessageBoxA  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MsgBoxAsk  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+MsgBox . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+OpenInputFile  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ParseDecimal32 . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ParseInteger32 . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+PeekConsoleInputA  . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Random32 . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+RandomRange  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Randomize  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadChar . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadConsoleA . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadConsoleInputA  . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadDec  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFile . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFloat  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadFromFile . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadHex  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadInt  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadKeyFlush . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadKey  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ReadString . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+RightCheck . . . . . . . . . . .	P Near	 00000460 _TEXT	Length= 00000077 Public STDCALL
+SetConsoleCursorInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleCursorPosition . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleMode . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleScreenBufferSize . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleTextAttribute  . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleTitleA . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetConsoleWindowInfo . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetFilePointer . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetLocalTime . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SetTextColor . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+ShowFPUStack . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Sleep  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+StrLength  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_compare  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_copy . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_length . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_trim . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+Str_ucase  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+SystemTimeToFileTime . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+TNG  . . . . . . . . . . . . . .	P Near	 000005EC _TEXT	Length= 0000002B Public STDCALL
+  L22  . . . . . . . . . . . . .	L Near	 00000601 _TEXT	
+TopCheck . . . . . . . . . . . .	P Near	 00000270 _TEXT	Length= 00000077 Public STDCALL
+TopLeftCornerCheck . . . . . . .	P Near	 00000221 _TEXT	Length= 0000004F Public STDCALL
+TopRightCornerCheck  . . . . . .	P Near	 000002E7 _TEXT	Length= 0000004F Public STDCALL
+WaitMsg  . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteBinB  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteBin . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteChar  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleA  . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleOutputAttribute  . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteConsoleOutputCharacterA . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteDec . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteFile  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteFloat . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteHexB  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteHex . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteInt . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteStackFrameName  . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteStackFrame  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteString  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteToFile  . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+WriteWindowsMsg  . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External STDCALL
+allocate_array_present . . . . .	P Near	 00000047 _TEXT	Length= 0000003C Public STDCALL
+bomb . . . . . . . . . . . . . .	P Near	 000007BD _TEXT	Length= 00000097 Public STDCALL
+checkSquare  . . . . . . . . . .	P Near	 00000184 _TEXT	Length= 0000009D Public STDCALL
+displayBoard . . . . . . . . . .	P Near	 00000128 _TEXT	Length= 00000033 Public STDCALL
+  L1 . . . . . . . . . . . . . .	L Near	 0000013C _TEXT	
+f_to_p . . . . . . . . . . . . .	P Near	 0000067D _TEXT	Length= 00000024 Public STDCALL
+  L66  . . . . . . . . . . . . .	L Near	 0000068A _TEXT	
+flasher  . . . . . . . . . . . .	P Near	 0000074A _TEXT	Length= 00000073 Public STDCALL
+game_loop  . . . . . . . . . . .	P Near	 000006A1 _TEXT	Length= 0000001C Public STDCALL
+  L16  . . . . . . . . . . . . .	L Near	 000006A6 _TEXT	
+glider . . . . . . . . . . . . .	P Near	 000006BD _TEXT	Length= 0000008D Public STDCALL
+its_quantumly_alive  . . . . . .	P Near	 00000617 _TEXT	Length= 00000066 Public STDCALL
+main . . . . . . . . . . . . . .	P Near	 00000000 _TEXT	Length= 0000002F Public STDCALL
+make_heap  . . . . . . . . . . .	P Near	 0000002F _TEXT	Length= 00000018 Public STDCALL
+  quit . . . . . . . . . . . . .	L Near	 00000046 _TEXT	
+patterns . . . . . . . . . . . .	P Near	 00000854 _TEXT	Length= 00000037 Public STDCALL
+printLine  . . . . . . . . . . .	P Near	 0000015B _TEXT	Length= 00000029 Public STDCALL
+  L2 . . . . . . . . . . . . . .	L Near	 00000162 _TEXT	
+printf . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+scanf  . . . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+userInput  . . . . . . . . . . .	P Near	 00000083 _TEXT	Length= 000000A5 Public STDCALL
+wsprintfA  . . . . . . . . . . .	P Near	 00000000 FLAT	Length= 00000000 External C
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 00000000h   
+@DataSize  . . . . . . . . . . .	Number	 00000000h   
+@Interface . . . . . . . . . . .	Number	 00000003h   
+@Model . . . . . . . . . . . . .	Number	 00000007h   
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 FLAT
+@fardata?  . . . . . . . . . . .	Text   	 FLAT
+@fardata . . . . . . . . . . . .	Text   	 FLAT
+@stack . . . . . . . . . . . . .	Text   	 FLAT
+ALT_MASK . . . . . . . . . . . .	Number	 00000003h   
+ARRAY_SIZE . . . . . . . . . . .	DWord	 00000129 _DATA	
+BoredSize  . . . . . . . . . . .	DWord	 0000012D _DATA	
+CAPSLOCK_ON  . . . . . . . . . .	Number	 00000080h   
+CREATE_ALWAYS  . . . . . . . . .	Number	 00000002h   
+CREATE_NEW . . . . . . . . . . .	Number	 00000001h   
+CTRL_MASK  . . . . . . . . . . .	Number	 0000000Ch   
+CreateFile . . . . . . . . . . .	Text   	 CreateFileA
+DO_NOT_SHARE . . . . . . . . . .	Number	 00000000h   
+ENABLE_ECHO_INPUT  . . . . . . .	Number	 00000004h   
+ENABLE_LINE_INPUT  . . . . . . .	Number	 00000002h   
+ENABLE_MOUSE_INPUT . . . . . . .	Number	 00000010h   
+ENABLE_PROCESSED_INPUT . . . . .	Number	 00000001h   
+ENABLE_PROCESSED_OUTPUT  . . . .	Number	 00000001h   
+ENABLE_WINDOW_INPUT  . . . . . .	Number	 00000008h   
+ENABLE_WRAP_AT_EOL_OUTPUT  . . .	Number	 00000002h   
+ENHANCED_KEY . . . . . . . . . .	Number	 00000100h   
+FALSE  . . . . . . . . . . . . .	Number	 00000000h   
+FILE_APPEND_DATA . . . . . . . .	Number	 00000004h   
+FILE_ATTRIBUTE_ARCHIVE . . . . .	Number	 00000020h   
+FILE_ATTRIBUTE_COMPRESSED  . . .	Number	 00000800h   
+FILE_ATTRIBUTE_DEVICE  . . . . .	Number	 00000040h   
+FILE_ATTRIBUTE_DIRECTORY . . . .	Number	 00000010h   
+FILE_ATTRIBUTE_ENCRYPTED . . . .	Number	 00004000h   
+FILE_ATTRIBUTE_HIDDEN  . . . . .	Number	 00000002h   
+FILE_ATTRIBUTE_NORMAL  . . . . .	Number	 00000080h   
+FILE_ATTRIBUTE_NOT_CONTENT_INDEXED .	Number	 00002000h   
+FILE_ATTRIBUTE_OFFLINE . . . . .	Number	 00001000h   
+FILE_ATTRIBUTE_READONLY  . . . .	Number	 00000001h   
+FILE_ATTRIBUTE_REPARSE_POINT . .	Number	 00000400h   
+FILE_ATTRIBUTE_SPARSE_FILE . . .	Number	 00000200h   
+FILE_ATTRIBUTE_SYSTEM  . . . . .	Number	 00000004h   
+FILE_ATTRIBUTE_TEMPORARY . . . .	Number	 00000100h   
+FILE_BEGIN . . . . . . . . . . .	Number	 00000000h   
+FILE_CURRENT . . . . . . . . . .	Number	 00000001h   
+FILE_DELETE_CHILD  . . . . . . .	Number	 00000040h   
+FILE_END . . . . . . . . . . . .	Number	 00000002h   
+FILE_READ_DATA . . . . . . . . .	Number	 00000001h   
+FILE_SHARE_DELETE  . . . . . . .	Number	 00000004h   
+FILE_SHARE_READ  . . . . . . . .	Number	 00000001h   
+FILE_SHARE_WRITE . . . . . . . .	Number	 00000002h   
+FILE_WRITE_DATA  . . . . . . . .	Number	 00000002h   
+FOCUS_EVENT  . . . . . . . . . .	Number	 00000010h   
+FORMAT_MESSAGE_ALLOCATE_BUFFER .	Number	 00000100h   
+FORMAT_MESSAGE_FROM_SYSTEM . . .	Number	 00001000h   
+FormatMessage  . . . . . . . . .	Text   	 FormatMessageA
+GENERIC_ALL  . . . . . . . . . .	Number	 10000000h   
+GENERIC_EXECUTE  . . . . . . . .	Number	 20000000h   
+GENERIC_READ . . . . . . . . . .	Number	 -80000000h   
+GENERIC_WRITE  . . . . . . . . .	Number	 40000000h   
+GetCommandLine . . . . . . . . .	Text   	 GetCommandLineA
+HANDLE . . . . . . . . . . . . .	Text   	 DWORD
+HEAP_GENERATE_EXCEPTIONS . . . .	Number	 00000004h   
+HEAP_GROWABLE  . . . . . . . . .	Number	 00000002h   
+HEAP_NO_SERIALIZE  . . . . . . .	Number	 00000001h   
+HEAP_REALLOC_IN_PLACE_ONLY . . .	Number	 00000010h   
+HEAP_ZERO_MEMORY . . . . . . . .	Number	 00000008h   
+IDABORT  . . . . . . . . . . . .	Number	 00000003h   
+IDCANCEL . . . . . . . . . . . .	Number	 00000002h   
+IDCLOSE  . . . . . . . . . . . .	Number	 00000008h   
+IDCONTINUE . . . . . . . . . . .	Number	 0000000Bh   
+IDHELP . . . . . . . . . . . . .	Number	 00000009h   
+IDIGNORE . . . . . . . . . . . .	Number	 00000005h   
+IDNO . . . . . . . . . . . . . .	Number	 00000007h   
+IDOK . . . . . . . . . . . . . .	Number	 00000001h   
+IDRETRY  . . . . . . . . . . . .	Number	 00000004h   
+IDTIMEOUT  . . . . . . . . . . .	Number	 00007D00h   
+IDTRYAGAIN . . . . . . . . . . .	Number	 0000000Ah   
+IDYES  . . . . . . . . . . . . .	Number	 00000006h   
+INVALID_HANDLE_VALUE . . . . . .	Number	 -00000001h   
+KBDOWN_FLAG  . . . . . . . . . .	Number	 00000001h   
+KEY_EVENT  . . . . . . . . . . .	Number	 00000001h   
+KEY_MASKS  . . . . . . . . . . .	Number	 0000001Fh   
+LEFT_ALT_PRESSED . . . . . . . .	Number	 00000002h   
+LEFT_CTRL_PRESSED  . . . . . . .	Number	 00000008h   
+LeftCornerNumber . . . . . . . .	DWord	 0000015D _DATA	
+MB_ABORTRETRYIGNORE  . . . . . .	Number	 00000002h   
+MB_APPLMODAL . . . . . . . . . .	Number	 00000000h   
+MB_CANCELTRYCONTINUE . . . . . .	Number	 00000006h   
+MB_DEFBUTTON1  . . . . . . . . .	Number	 00000000h   
+MB_DEFBUTTON2  . . . . . . . . .	Number	 00000100h   
+MB_DEFBUTTON3  . . . . . . . . .	Number	 00000200h   
+MB_DEFBUTTON4  . . . . . . . . .	Number	 00000300h   
+MB_HELP  . . . . . . . . . . . .	Number	 00004000h   
+MB_ICONASTERISK  . . . . . . . .	Number	 00000040h   
+MB_ICONERROR . . . . . . . . . .	Number	 00000010h   
+MB_ICONEXCLAMATION . . . . . . .	Number	 00000030h   
+MB_ICONHAND  . . . . . . . . . .	Number	 00000010h   
+MB_ICONINFORMATION . . . . . . .	Number	 00000040h   
+MB_ICONQUESTION  . . . . . . . .	Number	 00000020h   
+MB_ICONSTOP  . . . . . . . . . .	Number	 00000010h   
+MB_ICONWARNING . . . . . . . . .	Number	 00000030h   
+MB_OKCANCEL  . . . . . . . . . .	Number	 00000001h   
+MB_OK  . . . . . . . . . . . . .	Number	 00000000h   
+MB_RETRYCANCEL . . . . . . . . .	Number	 00000005h   
+MB_SYSTEMMODAL . . . . . . . . .	Number	 00001000h   
+MB_TASKMODAL . . . . . . . . . .	Number	 00002000h   
+MB_USERICON  . . . . . . . . . .	Number	 00000080h   
+MB_YESNOCANCEL . . . . . . . . .	Number	 00000003h   
+MB_YESNO . . . . . . . . . . . .	Number	 00000004h   
+MENU_EVENT . . . . . . . . . . .	Number	 00000008h   
+MOUSE_EVENT  . . . . . . . . . .	Number	 00000002h   
+MessageBox . . . . . . . . . . .	Text   	 MessageBoxA
+NULL . . . . . . . . . . . . . .	Number	 00000000h   
+NUMLOCK_ON . . . . . . . . . . .	Number	 00000020h   
+OPEN_ALWAYS  . . . . . . . . . .	Number	 00000004h   
+OPEN_EXISTING  . . . . . . . . .	Number	 00000003h   
+PeekConsoleInput . . . . . . . .	Text   	 PeekConsoleInputA
+RIGHT_ALT_PRESSED  . . . . . . .	Number	 00000001h   
+RIGHT_CTRL_PRESSED . . . . . . .	Number	 00000004h   
+ReadConsoleInput . . . . . . . .	Text   	 ReadConsoleInputA
+ReadConsole  . . . . . . . . . .	Text   	 ReadConsoleA
+SCROLLLOCK_ON  . . . . . . . . .	Number	 00000040h   
+SHIFT_MASK . . . . . . . . . . .	Number	 00000010h   
+SHIFT_PRESSED  . . . . . . . . .	Number	 00000010h   
+STD_ERROR_HANDLE . . . . . . . .	Number	 -0000000Ch   
+STD_INPUT_HANDLE . . . . . . . .	Number	 -0000000Ah   
+STD_OUTPUT_HANDLE  . . . . . . .	Number	 -0000000Bh   
+SetConsoleTitle  . . . . . . . .	Text   	 SetConsoleTitleA
+TAB  . . . . . . . . . . . . . .	Number	 00000009h   
+TRUE . . . . . . . . . . . . . .	Number	 00000001h   
+TRUNCATE_EXISTING  . . . . . . .	Number	 00000005h   
+VK_11  . . . . . . . . . . . . .	Number	 000000BDh   
+VK_12  . . . . . . . . . . . . .	Number	 000000BBh   
+VK_ADD . . . . . . . . . . . . .	Number	 0000006Bh   
+VK_BACK  . . . . . . . . . . . .	Number	 00000008h   
+VK_CANCEL  . . . . . . . . . . .	Number	 00000003h   
+VK_CAPITAL . . . . . . . . . . .	Number	 00000014h   
+VK_CLEAR . . . . . . . . . . . .	Number	 0000000Ch   
+VK_CONTROL . . . . . . . . . . .	Number	 00000011h   
+VK_DECIMAL . . . . . . . . . . .	Number	 0000006Eh   
+VK_DELETE  . . . . . . . . . . .	Number	 0000002Eh   
+VK_DIVIDE  . . . . . . . . . . .	Number	 0000006Fh   
+VK_DOWN  . . . . . . . . . . . .	Number	 00000028h   
+VK_END . . . . . . . . . . . . .	Number	 00000023h   
+VK_ESCAPE  . . . . . . . . . . .	Number	 0000001Bh   
+VK_EXECUTE . . . . . . . . . . .	Number	 0000002Bh   
+VK_F10 . . . . . . . . . . . . .	Number	 00000079h   
+VK_F11 . . . . . . . . . . . . .	Number	 0000007Ah   
+VK_F12 . . . . . . . . . . . . .	Number	 0000007Bh   
+VK_F13 . . . . . . . . . . . . .	Number	 0000007Ch   
+VK_F14 . . . . . . . . . . . . .	Number	 0000007Dh   
+VK_F15 . . . . . . . . . . . . .	Number	 0000007Eh   
+VK_F16 . . . . . . . . . . . . .	Number	 0000007Fh   
+VK_F17 . . . . . . . . . . . . .	Number	 00000080h   
+VK_F18 . . . . . . . . . . . . .	Number	 00000081h   
+VK_F19 . . . . . . . . . . . . .	Number	 00000082h   
+VK_F1  . . . . . . . . . . . . .	Number	 00000070h   
+VK_F20 . . . . . . . . . . . . .	Number	 00000083h   
+VK_F21 . . . . . . . . . . . . .	Number	 00000084h   
+VK_F22 . . . . . . . . . . . . .	Number	 00000085h   
+VK_F23 . . . . . . . . . . . . .	Number	 00000086h   
+VK_F24 . . . . . . . . . . . . .	Number	 00000087h   
+VK_F2  . . . . . . . . . . . . .	Number	 00000071h   
+VK_F3  . . . . . . . . . . . . .	Number	 00000072h   
+VK_F4  . . . . . . . . . . . . .	Number	 00000073h   
+VK_F5  . . . . . . . . . . . . .	Number	 00000074h   
+VK_F6  . . . . . . . . . . . . .	Number	 00000075h   
+VK_F7  . . . . . . . . . . . . .	Number	 00000076h   
+VK_F8  . . . . . . . . . . . . .	Number	 00000077h   
+VK_F9  . . . . . . . . . . . . .	Number	 00000078h   
+VK_HELP  . . . . . . . . . . . .	Number	 0000002Fh   
+VK_HOME  . . . . . . . . . . . .	Number	 00000024h   
+VK_INSERT  . . . . . . . . . . .	Number	 0000002Dh   
+VK_LBUTTON . . . . . . . . . . .	Number	 00000001h   
+VK_LCONTROL  . . . . . . . . . .	Number	 000000A2h   
+VK_LEFT  . . . . . . . . . . . .	Number	 00000025h   
+VK_LMENU . . . . . . . . . . . .	Number	 000000A4h   
+VK_LSHIFT  . . . . . . . . . . .	Number	 000000A0h   
+VK_MENU  . . . . . . . . . . . .	Number	 00000012h   
+VK_MULTIPLY  . . . . . . . . . .	Number	 0000006Ah   
+VK_NEXT  . . . . . . . . . . . .	Number	 00000022h   
+VK_NUMLOCK . . . . . . . . . . .	Number	 00000090h   
+VK_NUMPAD0 . . . . . . . . . . .	Number	 00000060h   
+VK_NUMPAD1 . . . . . . . . . . .	Number	 00000061h   
+VK_NUMPAD2 . . . . . . . . . . .	Number	 00000062h   
+VK_NUMPAD3 . . . . . . . . . . .	Number	 00000063h   
+VK_NUMPAD4 . . . . . . . . . . .	Number	 00000064h   
+VK_NUMPAD5 . . . . . . . . . . .	Number	 00000065h   
+VK_NUMPAD6 . . . . . . . . . . .	Number	 00000066h   
+VK_NUMPAD7 . . . . . . . . . . .	Number	 00000067h   
+VK_NUMPAD8 . . . . . . . . . . .	Number	 00000068h   
+VK_NUMPAD9 . . . . . . . . . . .	Number	 00000069h   
+VK_PAUSE . . . . . . . . . . . .	Number	 00000013h   
+VK_PRINT . . . . . . . . . . . .	Number	 0000002Ah   
+VK_PRIOR . . . . . . . . . . . .	Number	 00000021h   
+VK_RBUTTON . . . . . . . . . . .	Number	 00000002h   
+VK_RCONTROL  . . . . . . . . . .	Number	 000000A3h   
+VK_RETURN  . . . . . . . . . . .	Number	 0000000Dh   
+VK_RIGHT . . . . . . . . . . . .	Number	 00000027h   
+VK_RMENU . . . . . . . . . . . .	Number	 000000A5h   
+VK_RSHIFT  . . . . . . . . . . .	Number	 000000A1h   
+VK_SCROLL  . . . . . . . . . . .	Number	 00000091h   
+VK_SEPARATER . . . . . . . . . .	Number	 0000006Ch   
+VK_SHIFT . . . . . . . . . . . .	Number	 00000010h   
+VK_SNAPSHOT  . . . . . . . . . .	Number	 0000002Ch   
+VK_SPACE . . . . . . . . . . . .	Number	 00000020h   
+VK_SUBTRACT  . . . . . . . . . .	Number	 0000006Dh   
+VK_TAB . . . . . . . . . . . . .	Number	 00000009h   
+VK_UP  . . . . . . . . . . . . .	Number	 00000026h   
+WINDOW_BUFFER_SIZE_EVENT . . . .	Number	 00000004h   
+WriteConsoleOutputCharacter  . .	Text   	 WriteConsoleOutputCharacterA
+WriteConsole . . . . . . . . . .	Text   	 WriteConsoleA
+bLeft  . . . . . . . . . . . . .	DWord	 00000151 _DATA	
+bMiddle  . . . . . . . . . . . .	DWord	 00000155 _DATA	
+bRight . . . . . . . . . . . . .	DWord	 00000159 _DATA	
+black  . . . . . . . . . . . . .	Number	 00000000h   
+blue . . . . . . . . . . . . . .	Number	 00000001h   
+bored_size_bytes . . . . . . . .	DWord	 00000131 _DATA	
+brown  . . . . . . . . . . . . .	Number	 00000006h   
+cLeft  . . . . . . . . . . . . .	DWord	 00000145 _DATA	
+cMiddle  . . . . . . . . . . . .	DWord	 00000149 _DATA	
+cRight . . . . . . . . . . . . .	DWord	 0000014D _DATA	
+cyan . . . . . . . . . . . . . .	Number	 00000003h   
+dim  . . . . . . . . . . . . . .	DWord	 00000000 _DATA	
+exit . . . . . . . . . . . . . .	Text   	 INVOKE ExitProcess,0
+fbored . . . . . . . . . . . . .	DWord	 00000165 _DATA	
+gray . . . . . . . . . . . . . .	Number	 00000008h   
+green  . . . . . . . . . . . . .	Number	 00000002h   
+hHeap  . . . . . . . . . . . . .	DWord	 00000125 _DATA	
+lightBlue  . . . . . . . . . . .	Number	 00000009h   
+lightCyan  . . . . . . . . . . .	Number	 0000000Bh   
+lightGray  . . . . . . . . . . .	Number	 00000007h   
+lightGreen . . . . . . . . . . .	Number	 0000000Ah   
+lightMagenta . . . . . . . . . .	Number	 0000000Dh   
+lightRed . . . . . . . . . . . .	Number	 0000000Ch   
+line . . . . . . . . . . . . . .	Byte	 00000004 _DATA	
+liveSquareColor  . . . . . . . .	DWord	 00000005 _DATA	
+magenta  . . . . . . . . . . . .	Number	 00000005h   
+neighbors  . . . . . . . . . . .	DWord	 00000135 _DATA	
+pbored . . . . . . . . . . . . .	DWord	 00000161 _DATA	
+prompt2  . . . . . . . . . . . .	Byte	 00000037 _DATA	
+prompt3  . . . . . . . . . . . .	Byte	 0000007A _DATA	
+prompt4  . . . . . . . . . . . .	Byte	 000000DA _DATA	
+prompt . . . . . . . . . . . . .	Byte	 00000009 _DATA	
+red  . . . . . . . . . . . . . .	Number	 00000004h   
+uLeft  . . . . . . . . . . . . .	DWord	 00000139 _DATA	
+uMiddle  . . . . . . . . . . . .	DWord	 0000013D _DATA	
+uRight . . . . . . . . . . . . .	DWord	 00000141 _DATA	
+white  . . . . . . . . . . . . .	Number	 0000000Fh   
+wsprintf . . . . . . . . . . . .	Text   	 wsprintfA
+yellow . . . . . . . . . . . . .	Number	 0000000Eh   
+
+	   0 Warnings
+	   0 Errors
